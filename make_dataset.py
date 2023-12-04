@@ -10,6 +10,8 @@ import torch
 from pathlib import Path
 import cv2
 
+# TODO
+# 1. Right now the json still has both train and val splits, unify for more train data.
 
 SELECT_DATA = False
 GEN_KP_CTRL = True
