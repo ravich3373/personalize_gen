@@ -11,7 +11,7 @@ from pathlib import Path
 import cv2
 
 
-SELECT_DATA = True
+SELECT_DATA = False
 GEN_KP_CTRL = True
 
 OUT_DIR = "/scratch/rc5124/llvm/datasets/coco2014/sel_data"
@@ -45,6 +45,7 @@ colors = [
     170,     0,   255, 
     255,     0,   255, 
      85,     0,   255]
+colors = np.array(colors).reshape(-1,3)
 
 
 class FastVisualizer:
@@ -180,7 +181,7 @@ def generate_sk_control():
     if not os.path.exists(KP_DIR):
         os.makedirs(KP_DIR)
     # generation settings
-    cap_ann = COCO(os.path.join(coco_dir, captions_fls[0]))
+    cap_ann = COCO(os.path.join(coco_dir, keypoints_fls[0]))
     cat_info = cap_ann.loadCats(cap_ann.getCatIds())
     kp_colors = [clr for clr, sk in sorted(zip(colors, cat_info[0]["skeleton"]), key=lambda l: l[1][0]) ]
     kp_colors = np.array(kp_colors)
@@ -191,7 +192,7 @@ def generate_sk_control():
                 "skeleton_link_colors": colors}
     visualizer = FastVisualizer(metainfo)
     # read selected json
-    with open(f"coco_single_person_dataset.json", "w") as fp:
+    with open(f"coco_single_person_dataset.json") as fp:
         sel_data = json.load(fp)
     # vis
     for imgid, sample in tqdm(sel_data["train"].items(), desc="generating keypoint imgs"):
