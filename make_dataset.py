@@ -7,15 +7,22 @@ import os
 import clip
 from PIL import Image
 import torch
+from pathlib import Path
+import cv2
 
+
+SELECT_DATA = True
+GEN_KP_CTRL = True
 
 OUT_DIR = "/scratch/rc5124/llvm/datasets/coco2014/sel_data"
 coco_dir = "/scratch/rc5124/llvm/datasets/coco2014/"
+KP_DIR = f"{OUT_DIR}/kp_imgs"
 sel_kp_frac = 0.3
 
 splits = ["train", "val"]
 captions_fls = ["annotations/captions_train2014.json", "annotations/captions_val2014.json"]
 keypoints_fls = ["annotations/person_keypoints_train2014.json", "annotations/person_keypoints_val2014.json"]
+
 
 
 colors = [
@@ -38,9 +45,6 @@ colors = [
     170,     0,   255, 
     255,     0,   255, 
      85,     0,   255]
-
-kp_colors = [clr for clr, sk in sorted(zip(colors, cat_info[0]["skeleton"]), key=lambda l: l[1][0]) ]
-kp_colors = np.array(kp_colors)
 
 
 class FastVisualizer:
@@ -109,8 +113,7 @@ class FastVisualizer:
                            (255, 255, 255))
 
 
-
-if __name__ == "__main__":
+def select_data():
     sel_data = {}
     # initialize clip model
     model, preprocess = clip.load("ViT-B/32")
@@ -170,15 +173,39 @@ if __name__ == "__main__":
     # save
     with open(f"coco_single_person_dataset.json", "w") as fp:
         json.dump(sel_data, fp)
-    # generate skeleton vis
+
+
+def generate_sk_control():
+    # check op dir
+    if not os.path.exists(KP_DIR):
+        os.makedirs(KP_DIR)
+    # generation settings
+    cap_ann = COCO(os.path.join(coco_dir, captions_fls[0]))
     cat_info = cap_ann.loadCats(cap_ann.getCatIds())
-    nfo = {"keypoint_id2name": {i: body_part for i, body_part in enumerate(cat_info[0]["keypoints"])},
-            "keypoint_name2id": {body_part: i for i, body_part in enumerate(cat_info[0]["keypoints"])},
-            "keypoint_colors": kp_colors,
-            "skeleton_links": cat_info[0]["skeleton"],
-            "skeleton_link_colors": colors}
+    kp_colors = [clr for clr, sk in sorted(zip(colors, cat_info[0]["skeleton"]), key=lambda l: l[1][0]) ]
+    kp_colors = np.array(kp_colors)
+    metainfo = {"keypoint_id2name": {i: body_part for i, body_part in enumerate(cat_info[0]["keypoints"])},
+                "keypoint_name2id": {body_part: i for i, body_part in enumerate(cat_info[0]["keypoints"])},
+                "keypoint_colors": kp_colors,
+                "skeleton_links": cat_info[0]["skeleton"],
+                "skeleton_link_colors": colors}
+    visualizer = FastVisualizer(metainfo)
+    # read selected json
+    with open(f"coco_single_person_dataset.json", "w") as fp:
+        sel_data = json.load(fp)
+    # vis
+    for imgid, sample in tqdm(sel_data["train"].items(), desc="generating keypoint imgs"):
+        fn = Path(sample["file_name"])
+        kp_fn = f"{fn.stem}_kp{fn.suffix}"
+        kp_fl = os.path.join(KP_DIR, kp_fn)
+        kpts = np.array(sample["keypoints"]).reshape((17,3))
+        kpts, status = kpts[:,:2], kpts[:,2]
+        img = np.zeros((sample["height"], sample["width"], 3), dtype=np.int8)
+        visualizer.draw_pose(img, np.expand_dims(kpts, 0), np.expand_dims(status, 0))   # since only single person per pic
+        cv2.imwrite(kp_fl, img)
 
-
- 
-
-
+if __name__ == "__main__":
+    if SELECT_DATA:
+        select_data()
+    if GEN_KP_CTRL:
+        generate_sk_control()
