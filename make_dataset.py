@@ -207,6 +207,28 @@ def generate_sk_control():
         visualizer.draw_pose(img, np.expand_dims(kpts, 0), np.expand_dims(status, 0))   # since only single person per pic
         cv2.imwrite(kp_fl, img)
 
+
+
+
+def sel_to_hf():
+    with open("coco_single_person_dataset.json") as fp:
+        data = json.load(fp)
+    new_data = {"image": [],
+            "text": [],
+            "conditioning_image": []}
+    for split in data.keys():
+        for imgid, sample in data[split].items():
+            img_pth = os.path.join(coco_dir, f"{split}2014", sample["file_name"])
+            text = sample["caption"]
+            fn = Path(sample["file_name"])
+            conditioning_image = os.path.join(KP_DIR, f"{fn.stem}_kp{fn.suffix}")
+            new_data["image"].append(img_pth)
+            new_data["text"].append(text)
+            new_data["conditioning_image"].append(conditioning_image)
+    with open("coco14.json", "w") as fp:
+        json.dump(new_data, fp)
+
+
 if __name__ == "__main__":
     if SELECT_DATA:
         select_data()

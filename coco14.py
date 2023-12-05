@@ -6,9 +6,9 @@ import json
 from pathlib import Path
 
 
-COCO_IMGS_PTH = ""
-SEL_JSON_PTH = ""
-KP_CTRL_PTH = ""
+COCO_IMGS_PTH = "/scratch/rc5124/llvm/datasets/coco2014/train2014"
+SEL_JSON_PTH = "/scratch/rc5124/llvm/datasets/coco2014/coco14/coco14.json"
+KP_CTRL_PTH = "/scratch/rc5124/llvm/datasets/coco2014/sel_data/kp_imgs/"
 
 
 _VERSION = datasets.Version("0.0.2")
@@ -79,30 +79,58 @@ class COCO14(datasets.GeneratorBasedBuilder):
         ]
 
     def _generate_examples(self, metadata_path, images_dir, conditioning_images_dir):
-        with open(metadata_path) as fp:
-            metadata = json.load(fp)
+        metadata = pd.read_json(metadata_path)
+        
+        for _, row in metadata.iterrows():
+            text = row["text"]
 
-        for imgid, sample in metadata.items():
-            text = sample["caption"]
+            fn = Path(row["image"])
+            #image_path = os.path.join(images_dir, fn)
+            image = open(fn, "rb").read()
 
-            fn = Path(sample["file_name"])
-            image_path = os.path.join(images_dir, fn)
-            image = open(image_path, "rb").read()
-
-            conditioning_image_path = f"{fn.stem}_kp{fn.suffix}"
-            conditioning_image_path = os.path.join(
-                conditioning_images_dir, conditioning_image_path
-            )
+            conditioning_image_path = row["conditioning_image"]#f"{fn.stem}_kp{fn.suffix}"
+            #conditioning_image_path = os.path.join(
+            #    conditioning_images_dir, conditioning_image_path
+            #)
             conditioning_image = open(conditioning_image_path, "rb").read()
 
-            yield image_path, {
+            yield str(fn), {
                 "text": text,
                 "image": {
-                    "path": image_path,
+                    "path": str(fn),
                     "bytes": image,
                 },
                 "conditioning_image": {
-                    "path": conditioning_image_path,
+                    "path": str(conditioning_image_path),
                     "bytes": conditioning_image,
                 },
             }
+
+def gen_samples(metadata_path=SEL_JSON_PTH, images_dir=COCO_IMGS_PTH, conditioning_images_dir=KP_CTRL_PTH):
+    with open(metadata_path) as fp:
+        metadata = json.load(fp)
+    import pdb; pdb.set_trace()
+    for imgid, sample in metadata["train"].items():
+        text = sample["caption"]
+
+        fn = Path(sample["file_name"])
+        image_path = os.path.join(images_dir, fn)
+        image = open(image_path, "rb").read()
+
+        conditioning_image_path = f"{fn.stem}_kp{fn.suffix}"
+        conditioning_image_path = os.path.join(
+            conditioning_images_dir, conditioning_image_path
+        )
+        conditioning_image = open(conditioning_image_path, "rb").read()
+
+        yield image_path, {
+            "text": text,
+            "image": {
+                "path": image_path,
+                "bytes": image,
+            },
+            "conditioning_image": {
+                "path": conditioning_image_path,
+                "bytes": conditioning_image,
+            },
+        }
