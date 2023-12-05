@@ -15,6 +15,8 @@ import cv2
 
 SELECT_DATA = False
 GEN_KP_CTRL = True
+GEN_JF_JSON = True
+
 
 OUT_DIR = "/scratch/rc5124/llvm/datasets/coco2014/sel_data"
 coco_dir = "/scratch/rc5124/llvm/datasets/coco2014/"
@@ -197,17 +199,16 @@ def generate_sk_control():
     with open(f"coco_single_person_dataset.json") as fp:
         sel_data = json.load(fp)
     # vis
-    for imgid, sample in tqdm(sel_data["train"].items(), desc="generating keypoint imgs"):
-        fn = Path(sample["file_name"])
-        kp_fn = f"{fn.stem}_kp{fn.suffix}"
-        kp_fl = os.path.join(KP_DIR, kp_fn)
-        kpts = np.array(sample["keypoints"]).reshape((17,3))
-        kpts, status = kpts[:,:2], kpts[:,2]
-        img = np.zeros((sample["height"], sample["width"], 3), dtype=np.int8)
-        visualizer.draw_pose(img, np.expand_dims(kpts, 0), np.expand_dims(status, 0))   # since only single person per pic
-        cv2.imwrite(kp_fl, img)
-
-
+    for split in ["train", "val"]:
+        for imgid, sample in tqdm(sel_data[split].items(), desc="generating keypoint imgs"):
+            fn = Path(sample["file_name"])
+            kp_fn = f"{fn.stem}_kp{fn.suffix}"
+            kp_fl = os.path.join(KP_DIR, kp_fn)
+            kpts = np.array(sample["keypoints"]).reshape((17,3))
+            kpts, status = kpts[:,:2], kpts[:,2]
+            img = np.zeros((sample["height"], sample["width"], 3), dtype=np.int8)
+            visualizer.draw_pose(img, np.expand_dims(kpts, 0), np.expand_dims(status, 0))   # since only single person per pic
+            cv2.imwrite(kp_fl, img)
 
 
 def sel_to_hf():
@@ -234,3 +235,5 @@ if __name__ == "__main__":
         select_data()
     if GEN_KP_CTRL:
         generate_sk_control()
+    if GEN_JF_JSON:
+        sel_to_hf()
