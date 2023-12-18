@@ -100,6 +100,8 @@ class COCO14(datasets.GeneratorBasedBuilder):
             #)
             conditioning_image = open(conditioning_image_path, "rb").read()
 
+            grounding = row["grounding"]
+
             yield str(fn), {
                 "text": text,
                 "image": {
@@ -110,6 +112,7 @@ class COCO14(datasets.GeneratorBasedBuilder):
                     "path": str(conditioning_image_path),
                     "bytes": conditioning_image,
                 },
+                "grounding": grounding
             }
 
 def gen_samples(metadata_path=SEL_JSON_PTH, images_dir=COCO_IMGS_PTH, conditioning_images_dir=KP_CTRL_PTH):
