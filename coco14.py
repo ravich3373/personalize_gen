@@ -23,6 +23,12 @@ _FEATURES = datasets.Features(
         "image": datasets.Image(),
         "conditioning_image": datasets.Image(),
         "text": datasets.Value("string"),
+        "grounding": datasets.Sequence(
+                    {
+                        "bbox": datasets.Sequence(datasets.Value("float32"), length=4),
+                        "noun": datasets.Sequence(datasets.Value("string")),
+                    }
+        )
     },
 )
 
