@@ -203,6 +203,41 @@ def select_data():
 
 
 def generate_sk_control():
+    # check op dir
+    if not os.path.exists(KP_DIR):
+        os.makedirs(KP_DIR)
+    # generation settings
+    cap_ann = COCO(os.path.join(coco_dir, keypoints_fls[0]))
+    cat_info = cap_ann.loadCats(cap_ann.getCatIds())
+    kp_colors = [clr for clr, sk in sorted(zip(colors, cat_info[0]["skeleton"]), key=lambda l: l[1][0]) ]
+    kp_colors = np.array(kp_colors)
+    metainfo = {"keypoint_id2name": {i: body_part for i, body_part in enumerate(cat_info[0]["keypoints"])},
+                "keypoint_name2id": {body_part: i for i, body_part in enumerate(cat_info[0]["keypoints"])},
+                "keypoint_colors": kp_colors,
+                "skeleton_links": cat_info[0]["skeleton"],
+                "skeleton_link_colors": colors}
+    visualizer = FastVisualizer(metainfo)
+    # read selected json
+    with open(f"coco_single_person_dataset.json") as fp:
+        sel_data = json.load(fp)
+    # vis
+    for split in ["train", "val"]:
+        for imgid, sample in tqdm(sel_data[split].items(), desc="generating keypoint imgs"):
+            fn = Path(sample["file_name"])
+            kp_fn = f"{fn.stem}_kp{fn.suffix}"
+            kp_fl = os.path.join(KP_DIR, kp_fn)
+            kpts = np.array(sample["keypoints"]).reshape((17,3))
+            kpts, status = kpts[:,:2], kpts[:,2]
+            img = np.zeros((sample["height"], sample["width"], 3), dtype=np.int8)
+            visualizer.draw_pose(img, np.expand_dims(kpts, 0), np.expand_dims(status, 0))   # since only single person per pic
+            cv2.imwrite(kp_fl, img)
+            sample["conditioning_image"].append(kp_fl)
+    # save
+    with open(f"coco_single_person_dataset.json", "w") as fp:
+        json.dump(sel_data, fp)
+
+
+def generate_sk_control_openpose():
     open_pose = OpenposeDetector.from_pretrained("lllyasviel/Annotators")
     open_pose.to("cuda")
     # check op dir
@@ -211,10 +246,8 @@ def generate_sk_control():
     # read selected json
     with open(f"coco_single_person_dataset.json") as fp:
         sel_data = json.load(fp)
-    data = deepcopy(sel_data)
     # vis
     for split in ["train", "val"]:
-        data[split]["conditioning_image"] = []
         for imgid, sample in tqdm(sel_data[split].items(), desc="generating keypoint imgs"):
             fn = Path(sample["file_name"])
             kp_fn = f"{fn.stem}_kp{fn.suffix}"
@@ -223,10 +256,25 @@ def generate_sk_control():
             img = Image.open(img_pth).convert("RGB")
             kp_img = open_pose(img, hand_and_face=False)
             kp_img.save(kp_fl)
-            data[split]["conditioning_image"].append(kp_fl)
+            sample["conditioning_image"].append(kp_fl)
     # write the json
     with open(f"coco_single_person_dataset.json", "w") as fp:
-        json.dump(data, fp)
+        json.dump(sel_data, fp)
+
+
+def fraction(thresh = 500):
+    # read selected json
+    with open(f"coco_single_person_dataset.json") as fp:
+        sel_data = json.load(fp)
+    new_data = {"train": {},
+                "val": {}}
+    #
+    for split in ["train", "val"]:
+        imgid2samples = dict(list(sel_data[split].items())[:thresh])
+        new_data[split] = imgid2samples
+    # save
+    with open(f"coco_single_person_dataset.json", "w") as fp:
+        json.dump(new_data, fp)
 
 
 def generate_grounding():
@@ -242,11 +290,8 @@ def generate_grounding():
     # read selected json
     with open(f"coco_single_person_dataset.json") as fp:
         sel_data = json.load(fp)
-    data = deepcopy(sel_data)
     # generate grounding entities and bboxes
     for split in ["train", "val"]:
-        data[split]["grounding_nouns"] = []
-        data[split]["grounding_bboxes"] = []
         for imgid, sample in tqdm(sel_data[split].items(), desc="generating grounding data"):
             img_pth = os.path.join(coco_dir, f"{split}2014", sample["file_name"])
             pil_image = Image.open(img_pth).convert("RGB")
@@ -280,11 +325,11 @@ def generate_grounding():
             new_bboxes[:, 2] = new_bboxes[:, 2]/w
             new_bboxes[:, 3] = new_bboxes[:, 3]/h
             new_bboxes = new_bboxes.tolist()
-            data[split]["grounding_nouns"].append(entities)
-            data[split]["grounding_bboxes"].append(new_bboxes)
+            sample["grounding_nouns"].append(entities)
+            sample["grounding_bboxes"].append(new_bboxes)
     # save
     with open(f"coco_single_person_dataset.json", "w") as fp:
-        json.dump(data, fp)
+        json.dump(sel_data, fp)
 
 
 def sel_to_hf():
@@ -313,6 +358,7 @@ def sel_to_hf():
 if __name__ == "__main__":
     if SELECT_DATA:
         select_data()
+    fraction()
     if GEN_KP_CTRL:
         generate_sk_control()
     if GEN_GND_CTRL:
