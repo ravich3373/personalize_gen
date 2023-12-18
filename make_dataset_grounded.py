@@ -13,19 +13,20 @@ import cv2
 from controlnet_aux import OpenposeDetector
 from maskrcnn_benchmark.config import cfg
 from maskrcnn_benchmark.engine.predictor_glip import GLIPDemo
+import concurrent.futures
 
 
 # TODO
 # 1. Right now the json still has both train and val splits, unify for more train data.
 
-SELECT_DATA = True
-GEN_KP_CTRL = True
+SELECT_DATA = False
+GEN_KP_CTRL = False
 GEN_GND_CTRL = True
 GEN_JF_JSON = True
 
 
-grounding_config_file = "configs/pretrain/glip_Swin_T_O365_GoldG.yaml"
-grounding_weight_file = "MODEL/glip_tiny_model_o365_goldg_cc_sbu.pth"
+grounding_config_file = "../../final/GLIP/configs/pretrain/glip_Swin_T_O365_GoldG.yaml"
+grounding_weight_file = "../../final/GLIP/MODEL/glip_tiny_model_o365_goldg_cc_sbu.pth"
 
 
 cfg.local_rank = 0
@@ -221,7 +222,7 @@ def generate_sk_control():
             img_pth = os.path.join(coco_dir, f"{split}2014", sample["file_name"])
             img = Image.open(img_pth).convert("RGB")
             kp_img = open_pose(img, hand_and_face=False)
-            cv2.imwrite(kp_fl, kp_img)
+            kp_img.save(kp_fl)
             data[split]["conditioning_image"].append(kp_fl)
     # write the json
     with open(f"coco_single_person_dataset.json", "w") as fp:
@@ -292,18 +293,19 @@ def sel_to_hf():
     new_data = {"image": [],
             "text": [],
             "conditioning_image": [],
-            "grounding_nouns": [],
-            "grounding_bboxes": []}
+            "grounding":[]}
     for split in data.keys():
         for imgid, sample in data[split].items():
+            grounding_data = {"bbox": [], "noun": []}
             img_pth = os.path.join(coco_dir, f"{split}2014", sample["file_name"])
             text = sample["caption"]
             conditioning_image = sample["conditioning_image"]
             new_data["image"].append(img_pth)
             new_data["text"].append(text)
             new_data["conditioning_image"].append(conditioning_image)
-            new_data["grounding_nouns"].append(sample["grounding_nouns"])
-            new_data["grounding_bboxes"].append(sample["grounding_bboxes"])
+            grounding_data["noun"].append(sample["grounding_nouns"])
+            grounding_data["bbox"].append(sample["grounding_bboxes"])
+            new_data["grounding"].append(grounding_data)
     with open("coco14.json", "w") as fp:
         json.dump(new_data, fp)
 
