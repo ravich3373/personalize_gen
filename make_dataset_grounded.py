@@ -19,8 +19,8 @@ import concurrent.futures
 # TODO
 # 1. Right now the json still has both train and val splits, unify for more train data.
 
-SELECT_DATA = False
-GEN_KP_CTRL = False
+SELECT_DATA = True
+GEN_KP_CTRL = True
 GEN_GND_CTRL = True
 GEN_JF_JSON = True
 
@@ -152,13 +152,14 @@ def select_data():
         for img_id in kp_ann.getImgIds():
             ann_ids = kp_ann.getAnnIds(imgIds=img_id)
             if len(ann_ids) >= 1:
-                ppl_count = 0
+                sel_ann = []
                 for ann in kp_ann.loadAnns(ann_ids):   # single only single annotation is present
                     if not ann["iscrowd"] and ann["num_keypoints"] >= int(17*sel_kp_frac):
                         ppl_count += 1
                         del ann["segmentation"] # pass
-                if ppl_count >= 1:  # any image with more than 1 person with more than 30% kp visible.
-                    imgid2ann[img_id] = {}
+                        sel_ann.append(ann)
+                if len(sel_ann) >= 1:  # any image with more than 1 person with more than 30% kp visible.
+                    imgid2ann[img_id] = {"sel_anns": sel_ann}
         # gather captions for the select images
         for img_id in cap_ann.getImgIds():
             if img_id in imgid2ann.keys():
@@ -169,6 +170,7 @@ def select_data():
                     captions.append(ann["caption"])
                 imgid2ann[img_id]["captions"] = captions
         # clip based caption selection
+        limit_count = 0
         for imgid, ann in tqdm(imgid2ann.items()):
             img_meta = cap_ann.imgs[imgid]
             img_pth = os.path.join(coco_dir, f"{split}2014", img_meta["file_name"])
@@ -184,19 +186,23 @@ def select_data():
             sel_idx = text_probs.argmax().item()
             sel_cap = imgid2ann[imgid]["captions"][sel_idx]
             imgid2ann[imgid]["caption"] = sel_cap
+            # limit
+            limit_count += 1
+            if limit_count > 550:
+                break
         # add image data
         for imgid, ann in imgid2ann.items():
             img_meta = cap_ann.imgs[imgid]
             ann.update(img_meta)
 
         sel_data[split] = imgid2ann
-    
+
     # merge the splits
-    train_len = len(sel_data["train"])
-    val_len = len(sel_data["val"])
-    sel_data["train"].update(sel_data["val"])
-    del sel_data["val"]
-    assert len(sel_data["train"]) == train_len + val_len
+    # train_len = len(sel_data["train"])
+    # val_len = len(sel_data["val"])
+    # sel_data["train"].update(sel_data["val"])
+    # del sel_data["val"]
+    # assert len(sel_data["train"]) == train_len + val_len
     # save
     with open(f"coco_single_person_dataset.json", "w") as fp:
         json.dump(sel_data, fp)
@@ -222,16 +228,18 @@ def generate_sk_control():
         sel_data = json.load(fp)
     # vis
     for split in ["train", "val"]:
-        for imgid, sample in tqdm(sel_data[split].items(), desc="generating keypoint imgs"):
-            fn = Path(sample["file_name"])
+        for imgid, sample_ in tqdm(sel_data[split].items(), desc="generating keypoint imgs"):
+            sample = sample_["sel_anns"]
+            fn = Path(sample[0]["file_name"])
             kp_fn = f"{fn.stem}_kp{fn.suffix}"
             kp_fl = os.path.join(KP_DIR, kp_fn)
-            kpts = np.array(sample["keypoints"]).reshape((17,3))
-            kpts, status = kpts[:,:2], kpts[:,2]
-            img = np.zeros((sample["height"], sample["width"], 3), dtype=np.int8)
-            visualizer.draw_pose(img, np.expand_dims(kpts, 0), np.expand_dims(status, 0))   # since only single person per pic
+            img = np.zeros((sample[0]["height"], sample[0]["width"], 3), dtype=np.int8)
+            for skel in sample:
+                kpts = np.array(skel["keypoints"]).reshape((17,3))
+                kpts, status = kpts[:,:2], kpts[:,2]
+                visualizer.draw_pose(img, np.expand_dims(kpts, 0), np.expand_dims(status, 0))   # since only single person per pic
             cv2.imwrite(kp_fl, img)
-            sample["conditioning_image"].append(kp_fl)
+            sample_["conditioning_image"].append(kp_fl)
     # save
     with open(f"coco_single_person_dataset.json", "w") as fp:
         json.dump(sel_data, fp)
@@ -292,16 +300,17 @@ def generate_grounding():
         sel_data = json.load(fp)
     # generate grounding entities and bboxes
     for split in ["train", "val"]:
-        for imgid, sample in tqdm(sel_data[split].items(), desc="generating grounding data"):
-            img_pth = os.path.join(coco_dir, f"{split}2014", sample["file_name"])
+        for imgid, sample_ in tqdm(sel_data[split].items(), desc="generating grounding data"):
+            sample = sample_["sel_anns"]
+            img_pth = os.path.join(coco_dir, f"{split}2014", sample_["file_name"])
             pil_image = Image.open(img_pth).convert("RGB")
             image = np.array(pil_image)[:, :, [2, 1, 0]]
-            caption = sample["caption"]
+            caption = sample_["caption"]
             vis, pred = glip_demo.run_on_web_image(image, caption, 0.5)
             vis = vis[:, :, [2, 1, 0]]
             entities = []
             # save visualization
-            fn = Path(sample["file_name"])
+            fn = Path(sample_["file_name"])
             gnd_fn = f"{fn.stem}_gnd{fn.suffix}"
             gnd_fl = os.path.join(GND_DIR, gnd_fn)
             cv2.imwrite(gnd_fl, vis)
@@ -325,8 +334,8 @@ def generate_grounding():
             new_bboxes[:, 2] = new_bboxes[:, 2]/w
             new_bboxes[:, 3] = new_bboxes[:, 3]/h
             new_bboxes = new_bboxes.tolist()
-            sample["grounding_nouns"].append(entities)
-            sample["grounding_bboxes"].append(new_bboxes)
+            sample_["grounding_nouns"].append(entities)
+            sample_["grounding_bboxes"].append(new_bboxes)
     # save
     with open(f"coco_single_person_dataset.json", "w") as fp:
         json.dump(sel_data, fp)
@@ -340,16 +349,17 @@ def sel_to_hf():
             "conditioning_image": [],
             "grounding":[]}
     for split in data.keys():
-        for imgid, sample in data[split].items():
+        for imgid, sample_ in data[split].items():
+            sample = sample_["sel_anns"]
             grounding_data = {"bbox": [], "noun": []}
-            img_pth = os.path.join(coco_dir, f"{split}2014", sample["file_name"])
-            text = sample["caption"]
-            conditioning_image = sample["conditioning_image"]
+            img_pth = os.path.join(coco_dir, f"{split}2014", sample_["file_name"])
+            text = sample_["caption"]
+            conditioning_image = sample_["conditioning_image"]
             new_data["image"].append(img_pth)
             new_data["text"].append(text)
             new_data["conditioning_image"].append(conditioning_image)
-            grounding_data["noun"].append(sample["grounding_nouns"])
-            grounding_data["bbox"].append(sample["grounding_bboxes"])
+            grounding_data["noun"].append(sample_["grounding_nouns"])
+            grounding_data["bbox"].append(sample_["grounding_bboxes"])
             new_data["grounding"].append(grounding_data)
     with open("coco14.json", "w") as fp:
         json.dump(new_data, fp)
