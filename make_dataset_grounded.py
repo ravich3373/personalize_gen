@@ -155,7 +155,6 @@ def select_data():
                 sel_ann = []
                 for ann in kp_ann.loadAnns(ann_ids):   # single only single annotation is present
                     if not ann["iscrowd"] and ann["num_keypoints"] >= int(17*sel_kp_frac):
-                        ppl_count += 1
                         del ann["segmentation"] # pass
                         sel_ann.append(ann)
                 if len(sel_ann) >= 1:  # any image with more than 1 person with more than 30% kp visible.
@@ -230,16 +229,16 @@ def generate_sk_control():
     for split in ["train", "val"]:
         for imgid, sample_ in tqdm(sel_data[split].items(), desc="generating keypoint imgs"):
             sample = sample_["sel_anns"]
-            fn = Path(sample[0]["file_name"])
+            fn = Path(sample_["file_name"])
             kp_fn = f"{fn.stem}_kp{fn.suffix}"
             kp_fl = os.path.join(KP_DIR, kp_fn)
-            img = np.zeros((sample[0]["height"], sample[0]["width"], 3), dtype=np.int8)
+            img = np.zeros((sample_["height"], sample_["width"], 3), dtype=np.int8)
             for skel in sample:
                 kpts = np.array(skel["keypoints"]).reshape((17,3))
                 kpts, status = kpts[:,:2], kpts[:,2]
                 visualizer.draw_pose(img, np.expand_dims(kpts, 0), np.expand_dims(status, 0))   # since only single person per pic
             cv2.imwrite(kp_fl, img)
-            sample_["conditioning_image"].append(kp_fl)
+            sample_["conditioning_image"] = kp_fl
     # save
     with open(f"coco_single_person_dataset.json", "w") as fp:
         json.dump(sel_data, fp)
@@ -334,8 +333,8 @@ def generate_grounding():
             new_bboxes[:, 2] = new_bboxes[:, 2]/w
             new_bboxes[:, 3] = new_bboxes[:, 3]/h
             new_bboxes = new_bboxes.tolist()
-            sample_["grounding_nouns"].append(entities)
-            sample_["grounding_bboxes"].append(new_bboxes)
+            sample_["grounding_nouns"] = entities
+            sample_["grounding_bboxes"] = new_bboxes
     # save
     with open(f"coco_single_person_dataset.json", "w") as fp:
         json.dump(sel_data, fp)
